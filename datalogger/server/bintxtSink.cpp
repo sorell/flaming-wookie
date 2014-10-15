@@ -86,7 +86,7 @@ BintxtSinkImpl::queryRec(Record const &ref, Sink::SendRecord_f const &send) cons
     int bytes = 0;
 
 
-    while (1) {
+    while (!feof(file_)) {
         bytes += fread(buffer + bytes, 1, sizeof(buffer) - bytes, file_);
         int bufPos = 0;
 
@@ -95,15 +95,19 @@ BintxtSinkImpl::queryRec(Record const &ref, Sink::SendRecord_f const &send) cons
 
             if (0 == ret) {
                 bytes -= bufPos;
-                memmove(buffer, buffer + bufPos, bytes - bufPos);
+                memmove(buffer, buffer + bufPos, bytes);
                 break;
             }
 
-            if (matchRec(rec, ref)  &&  send(rec) < 0) {
+            if (matchRec(rec, ref)  &&  send(rec, ref.priv) < 0) {
                 return false;
             }
 
             bufPos += ret;
+
+            if (bufPos >= bytes) {
+                break;
+            }
         }
     }
 
@@ -114,7 +118,7 @@ BintxtSinkImpl::queryRec(Record const &ref, Sink::SendRecord_f const &send) cons
 bool
 BintxtSinkImpl::matchRec(Record const &rec, Record const &ref) const
 {
-    if (timercmp(&rec.timestamp, &ref.timestamp, < ))
+    if (timercmp(&rec.timestamp, &ref.timestamp, > ))
         return false;
     if (ref.devType != "*"  &&  rec.devType != ref.devType)
         return false;

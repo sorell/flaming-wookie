@@ -94,8 +94,6 @@ TcpSource::blockingListen(void)
 
 
     while (!stop_) {
-std::cerr << "selecting " << fdmax << "\n";
-
         fdset = readFds_;
         int selected = select(fdmax, &fdset, NULL, NULL, NULL);
         int const error = errno;
@@ -161,7 +159,7 @@ std::cerr << "selecting " << fdmax << "\n";
 
 
 void
-TcpSource::recordSend(Record const &) const
+TcpSource::recordSend(Record const &rec) const
 {
     std::cout << "polo\n";
 }
@@ -182,15 +180,15 @@ int
 TcpSource::recvfromClient(int const socket, ClientConnection &conn)
 {
     // Optimize by saving const bind to TcpSource::recordSend
-    static Sink::SendRecord_f const sendFunc(std::bind(&TcpSource::sendToClient, this, std::placeholders::_1));
+    static Sink::SendRecord_f const sendFunc(std::bind(&TcpSource::sendToClient, this, std::placeholders::_1, std::placeholders::_2));
 
     int ret;
     int bytes = recv(socket, conn.rxBuffer + conn.rxPos, RX_BUFFER_SIZE - conn.rxPos, 0);
 
 
-fprintf(stderr, "recv %d:", bytes);
-for (int i=0; i<bytes; ++i) fprintf(stderr, " %02X", conn.rxBuffer[i]);
-fprintf(stderr, "\n");
+// fprintf(stderr, "recv %d:", bytes);
+// for (int i=0; i<bytes; ++i) fprintf(stderr, " %02X", conn.rxBuffer[i]);
+// fprintf(stderr, "\n");
 
     if (bytes < 1) {
         // Return error or 'connection closed'
@@ -249,9 +247,9 @@ fprintf(stderr, "\n");
 
 
 int
-TcpSource::sendToClient(Record const &rec) const
+TcpSource::sendToClient(Record const &rec, uint64_t const priv) const
 {
-    int const socket = rec.priv;
+    int const socket = (int) priv;
 
     ClientMap_t::const_iterator const cl = clients_.find(socket);
     if (clients_.end() == cl) {

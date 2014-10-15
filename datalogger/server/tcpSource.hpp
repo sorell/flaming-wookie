@@ -53,7 +53,7 @@ private:
 
     int scanForStart(char const *buffer, int dataSize) const;
     int recvfromClient(int socket, ClientConnection &conn);
-    int sendToClient(Record const &) const;
+    int sendToClient(Record const &, uint64_t const priv) const;
 
 
     typedef std::map<int, ClientConnection> ClientMap_t;

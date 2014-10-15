@@ -12,6 +12,7 @@
 #define PRM_SERNUM      0x0002
 #define PRM_DEVTYPE     0x0003
 #define PRM_DATA        0x0004
+#define PRM_TIME        0x0005
 
 
 
@@ -20,9 +21,14 @@ struct RecordData {
     unsigned short len;
     
     union {
-        unsigned short u16;
+        uint16_t u16;
         char d[1];
+        struct {
+            uint32_t sec;
+            uint32_t usec;
+        } time;
     } value;
+
 } __attribute__((__packed__));
 
 #define REC_MINSIZE 4  // type + len bytes
@@ -34,9 +40,11 @@ struct ActionValidator { bool operator () (RecordData const &data) const { retur
 struct SernumValidator { bool operator () (RecordData const &data) const { return ntohs(data.len) <= 10; } };
 struct DevtypeValidator { bool operator () (RecordData const &data) const { return ntohs(data.len) <= 6; } };
 struct DataFieldValidator { bool operator () (RecordData const &data) const { return ntohs(data.len) <= 80; } };  // By the lack of better specs, defined by Stetson-Harrison
+struct TimeValidator { bool operator () (RecordData const &data) const { return ntohs(data.len) == 8; } };
 
 struct Copy2Bytes { int operator () (unsigned short &dst, RecordData const &data) const { dst = ntohs(data.value.u16); return 2; } };
 struct CopyStr { int operator () (std::string &dst, RecordData const &data) const { dst.assign(data.value.d, (std::string::size_type) ntohs(data.len)); return ntohs(data.len); } };
+struct CopyTime { int operator () (struct timeval &dst, RecordData const &data) const { dst.tv_sec = ntohl(data.value.time.sec); dst.tv_usec = ntohl(data.value.time.usec); return sizeof(data.value.time); } };
 
 
 template <class VALIDATOR, class COPIER>
@@ -110,6 +118,14 @@ public:
                 ret = dataFieldParser_.extract(rec.data, *data, dataSize - processed);
                 break;
 
+            case PRM_TIME:
+                if (rec.timestamp.tv_sec != 0) {
+                    std::cerr << "Invalid data: Record time defined twice" << std::endl;
+                    return -1;
+                }
+                ret = timeParser_.extract(rec.timestamp, *data, dataSize - processed);
+                break;
+
             default:
                 // Packet ended?
                 // std::cerr << "Invalid protocol param type " << type << std::endl;
@@ -174,6 +190,7 @@ private:
     ParamParser<SernumValidator, CopyStr> const sernumParser_;
     ParamParser<DevtypeValidator, CopyStr> const devtypeParser_;
     ParamParser<DataFieldValidator, CopyStr> const dataFieldParser_;
+    ParamParser<TimeValidator, CopyTime> const timeParser_;
 };
 
 

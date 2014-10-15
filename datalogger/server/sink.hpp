@@ -10,7 +10,7 @@ struct Record;
 class Sink
 {
 public:
-	typedef std::function<int (Record const &)> SendRecord_f;
+	typedef std::function<int (Record const &, uint64_t)> SendRecord_f;
 	typedef std::function<bool (Record const &, SendRecord_f const &)> ProcessRecord_f;
 
     Sink(char const *const sinkName) { SINKMGR->sinkRegister(sinkName, this); }
