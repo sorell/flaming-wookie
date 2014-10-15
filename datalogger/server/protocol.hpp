@@ -16,7 +16,7 @@
 
 
 
-struct RecordData {
+struct BinData {
     unsigned short type;
     unsigned short len;
     
@@ -36,15 +36,15 @@ struct RecordData {
 
 
 
-struct ActionValidator { bool operator () (RecordData const &data) const { return ntohs(data.len) == 2; } };
-struct SernumValidator { bool operator () (RecordData const &data) const { return ntohs(data.len) <= 10; } };
-struct DevtypeValidator { bool operator () (RecordData const &data) const { return ntohs(data.len) <= 6; } };
-struct DataFieldValidator { bool operator () (RecordData const &data) const { return ntohs(data.len) <= 80; } };  // By the lack of better specs, defined by Stetson-Harrison
-struct TimeValidator { bool operator () (RecordData const &data) const { return ntohs(data.len) == 8; } };
+struct ActionValidator { bool operator () (BinData const &bin) const { return ntohs(bin.len) == 2; } };
+struct SernumValidator { bool operator () (BinData const &bin) const { return ntohs(bin.len) <= 10; } };
+struct DevtypeValidator { bool operator () (BinData const &bin) const { return ntohs(bin.len) <= 6; } };
+struct DataFieldValidator { bool operator () (BinData const &bin) const { return ntohs(bin.len) <= 80; } };  // By the lack of better specs, defined by Stetson-Harrison
+struct TimeValidator { bool operator () (BinData const &bin) const { return ntohs(bin.len) == 8; } };
 
-struct Copy2Bytes { int operator () (unsigned short &dst, RecordData const &data) const { dst = ntohs(data.value.u16); return 2; } };
-struct CopyStr { int operator () (std::string &dst, RecordData const &data) const { dst.assign(data.value.d, (std::string::size_type) ntohs(data.len)); return ntohs(data.len); } };
-struct CopyTime { int operator () (struct timeval &dst, RecordData const &data) const { dst.tv_sec = ntohl(data.value.time.sec); dst.tv_usec = ntohl(data.value.time.usec); return sizeof(data.value.time); } };
+struct Copy2Bytes { int operator () (unsigned short &dst, BinData const &bin) const { dst = ntohs(bin.value.u16); return 2; } };
+struct CopyStr { int operator () (std::string &dst, BinData const &bin) const { dst.assign(bin.value.d, (std::string::size_type) ntohs(bin.len)); return ntohs(bin.len); } };
+struct CopyTime { int operator () (struct timeval &dst, BinData const &bin) const { dst.tv_sec = ntohl(bin.value.time.sec); dst.tv_usec = ntohl(bin.value.time.usec); return sizeof(bin.value.time); } };
 
 
 template <class VALIDATOR, class COPIER>
@@ -54,15 +54,15 @@ public:
     ParamParser(VALIDATOR const &v = VALIDATOR(), COPIER const &c = COPIER()) : validator_(v), copier_(c) {}
 
     template <typename T>
-    int extract(T &dst, RecordData const &data, int const dataLeft) const
+    int extract(T &dst, BinData const &bin, int const dataLeft) const
     {
-        if (dataLeft < REC_MINSIZE + ntohs(data.len)) {
+        if (dataLeft < REC_MINSIZE + ntohs(bin.len)) {
             return 0;
         }
-        if (!validator_(data)) {
+        if (!validator_(bin)) {
             return -1;
         }
-        return REC_MINSIZE + copier_(dst, data);
+        return REC_MINSIZE + copier_(dst, bin);
     }
 
 private:
@@ -78,12 +78,12 @@ public:
     {
         int processed = 0;
         int ret;
-        RecordData *data;
+        BinData *bin;
 
 
         while (processed + REC_MINSIZE < dataSize) {
-            data = (RecordData *) (buffer + processed);
-            unsigned short const type = ntohs(data->type);
+            bin = (BinData *) (buffer + processed);
+            unsigned short const type = ntohs(bin->type);
 
             switch (type) {
             case PRM_ACTION:
@@ -91,7 +91,7 @@ public:
                     std::cerr << "Invalid data: Record action defined twice" << std::endl;
                     return -1;
                 }
-                ret = actionParser_.extract(rec.action, *data, dataSize - processed);
+                ret = actionParser_.extract(rec.action, *bin, dataSize - processed);
                 break;
 
             case PRM_SERNUM:
@@ -99,7 +99,7 @@ public:
                     std::cerr << "Invalid data: Record serial defined twice" << std::endl;
                     return -1;
                 }
-                ret = sernumParser_.extract(rec.serial, *data, dataSize - processed);
+                ret = sernumParser_.extract(rec.serial, *bin, dataSize - processed);
                 break;
 
             case PRM_DEVTYPE:
@@ -107,7 +107,7 @@ public:
                     std::cerr << "Invalid data: Record dev type defined twice" << std::endl;
                     return -1;
                 }
-                ret = devtypeParser_.extract(rec.devType, *data, dataSize - processed);
+                ret = devtypeParser_.extract(rec.devType, *bin, dataSize - processed);
                 break;
 
             case PRM_DATA:
@@ -115,7 +115,7 @@ public:
                     std::cerr << "Invalid data: Record data defined twice" << std::endl;
                     return -1;
                 }
-                ret = dataFieldParser_.extract(rec.data, *data, dataSize - processed);
+                ret = dataFieldParser_.extract(rec.data, *bin, dataSize - processed);
                 break;
 
             case PRM_TIME:
@@ -123,7 +123,7 @@ public:
                     std::cerr << "Invalid data: Record time defined twice" << std::endl;
                     return -1;
                 }
-                ret = timeParser_.extract(rec.timestamp, *data, dataSize - processed);
+                ret = timeParser_.extract(rec.timestamp, *bin, dataSize - processed);
                 break;
 
             default:
@@ -151,36 +151,36 @@ public:
 
     int serialize(char *const buffer, int const bufSize, Record const &rec) const
     {
-        RecordData *data = (RecordData *) buffer;
+        BinData *bin = (BinData *) buffer;
         char *ptr = buffer;
 
 
-        data->type = PRM_ACTION;
-        data->len = 2;
-        data->value.u16 = REC_ACT_REPLY;
+        bin->type = PRM_ACTION;
+        bin->len = 2;
+        bin->value.u16 = REC_ACT_REPLY;
 
-        ptr += REC_MINSIZE + data->len;
-        data = (RecordData *) ptr;
+        ptr += REC_MINSIZE + bin->len;
+        bin = (BinData *) ptr;
 
-        data->type = PRM_SERNUM;
-        data->len = rec.serial.length();
-        rec.serial.copy(data->value.d, rec.serial.length());
+        bin->type = PRM_SERNUM;
+        bin->len = rec.serial.length();
+        rec.serial.copy(bin->value.d, rec.serial.length());
 
-        ptr += REC_MINSIZE + data->len;
-        data = (RecordData *) ptr;
+        ptr += REC_MINSIZE + bin->len;
+        bin = (BinData *) ptr;
 
-        data->type = PRM_DEVTYPE;
-        data->len = rec.devType.length();
-        rec.devType.copy(data->value.d, rec.devType.length());
+        bin->type = PRM_DEVTYPE;
+        bin->len = rec.devType.length();
+        rec.devType.copy(bin->value.d, rec.devType.length());
 
-        ptr += REC_MINSIZE + data->len;
-        data = (RecordData *) ptr;
+        ptr += REC_MINSIZE + bin->len;
+        bin = (BinData *) ptr;
 
-        data->type = PRM_DATA;
-        data->len = rec.data.length();
-        rec.data.copy(data->value.d, rec.data.length());
+        bin->type = PRM_DATA;
+        bin->len = rec.data.length();
+        rec.data.copy(bin->value.d, rec.data.length());
 
-        ptr += REC_MINSIZE + data->len;
+        ptr += REC_MINSIZE + bin->len;
         return ptr - buffer;
     }
 
