@@ -5,20 +5,26 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <iostream>
-#include <pthread.h>
 #include <signal.h>
 #include "tcpSource.hpp"
-#include "record.hpp"
 #include "protocol.hpp"
+#include "observer.hpp"
 
 
-
-TcpSource::TcpSource() : socket_(0), port_(0), stop_(false) 
+/*---- Constructor ----------------------------------------------------------
+  Does:
+    Just initialize some members.
+----------------------------------------------------------------------------*/
+TcpSource::TcpSource(Observer *const obs) : socket_(0), port_(0), stop_(false), fdmax_(0), observer_(obs) 
 {
     FD_ZERO(&readFds_);
 }
 
 
+/*---- Destructor -----------------------------------------------------------
+  Does:
+    Close the socket.
+----------------------------------------------------------------------------*/
 TcpSource::~TcpSource()
 { 
     if (socket_) {
@@ -30,6 +36,16 @@ TcpSource::~TcpSource()
 }
 
 
+/*---- Function -------------------------------------------------------------
+  Does:
+    Try to open and initialize the TCP socket for listening.
+  
+  Wants:
+    Port number.
+    
+  Gives: 
+    True on success.
+----------------------------------------------------------------------------*/
 bool
 TcpSource::open(int const port)
 {
@@ -69,7 +85,9 @@ TcpSource::open(int const port)
     }
     
     port_ = port;
+    fdmax_ = socket_ + 1;
     FD_SET(socket_, &readFds_);
+
     std::cout << "Opened TCP port " << port_ << " in socket " << socket_ << std::endl;
 
     return true;
@@ -84,18 +102,30 @@ error:
 }
 
 
+/*---- Function -------------------------------------------------------------
+  Does:
+    Block to listen the socket infinitely. This is the thread's loop.
+    Accept incoming connections to the TCP socket.
+    Receive data from clients from opened sockets.
+    Manage the fd_set on connection open and close.
+  
+  Wants:
+    Nothing.
+    
+  Gives: 
+    Nothing.
+----------------------------------------------------------------------------*/
 void
 TcpSource::blockingListen(void)
 {
     struct sockaddr_in peerAddr;
-    int fdmax = socket_ + 1;
     int i;
     fd_set fdset;
 
 
     while (!stop_) {
         fdset = readFds_;
-        int selected = select(fdmax, &fdset, NULL, NULL, NULL);
+        int selected = select(fdmax_, &fdset, NULL, NULL, NULL);
         int const error = errno;
 
         if (-1 == selected) {
@@ -108,7 +138,7 @@ TcpSource::blockingListen(void)
         }
 
 
-        for (i=0; i < fdmax && selected > 0; ++i)  if (FD_ISSET(i, &fdset)) {
+        for (i=0; i < fdmax_ && selected > 0; ++i)  if (FD_ISSET(i, &fdset)) {
             --selected;
 
             if (i == socket_) {
@@ -119,16 +149,7 @@ TcpSource::blockingListen(void)
                     return;
                 }
 
-                bool const ret = clients_.insert(ClientMap_t::value_type(peer, ClientConnection())).second;
-                if (!ret) {
-                    std::cerr << "BUG! Accepted socket that already existed" << std::endl;
-                    return;
-                }
-
-                FD_SET(peer, &readFds_);
-                if (peer >= fdmax) {
-                    fdmax = peer + 1;
-                }
+                onClientConnect(peer);
             }
 
             else {
@@ -136,7 +157,6 @@ TcpSource::blockingListen(void)
                 if (cl == clients_.end()) {
                     std::cerr << "BUG! Client not found for socket " << i << std::endl;
                     abort();
-                    continue;
                 }
 
                 int const recv = recvfromClient(i, cl->second);
@@ -148,8 +168,7 @@ TcpSource::blockingListen(void)
                 }
                 else if (0 == recv) {
                     std::cout << "Connection closed" << std::endl;
-                    clients_.erase(cl);
-                    FD_CLR(i, &readFds_);
+                    onClientDisconnect(cl);
                 }
             }
         }
@@ -159,23 +178,79 @@ TcpSource::blockingListen(void)
 
 
 void
-TcpSource::recordSend(Record const &rec) const
+TcpSource::onClientConnect(int const peer)
 {
-    std::cout << "polo\n";
+    bool const ret = clients_.insert(ClientMap_t::value_type(peer, ClientConnection())).second;
+    if (!ret) {
+        std::cerr << "BUG! Accepted socket that already existed" << std::endl;
+        abort();
+    }
+
+    FD_SET(peer, &readFds_);
+    if (peer >= fdmax_) {
+        fdmax_ = peer + 1;
+    }
 }
 
 
+void
+TcpSource::onClientDisconnect(ClientMap_t::iterator const connIt)
+{
+    int const peer = connIt->first;
+
+    if (observer_  &&  connIt->second.observerConnected) {
+        observer_->detachLurker(peer);
+    }
+
+    clients_.erase(connIt);
+    FD_CLR(peer, &readFds_);
+
+    if (peer == fdmax_ - 1) {
+        for (int i = peer - 1; i > 0; --i) {
+            if (FD_ISSET(i, &readFds_)) {
+                fdmax_ = i + 1;
+                break;
+            }
+        }
+    }
+}
+
+
+/*---- Function -------------------------------------------------------------
+  Does:
+    Scan for Record start marker in the byte stream.
+  
+  Wants:
+    Byte buffer and size of its valid contents.
+    
+  Gives: 
+    Offset in bytes to the next start marker.
+----------------------------------------------------------------------------*/
 int
 TcpSource::scanForStart(char const *const buffer, int const dataSize) const
 {
     // Would not need htons because DATA_START_WORD is symmetrical, but I like to have it here 
     // for future proofing.
     static unsigned short const startIndicator = htons(DATA_START_WORD);
-    char const *const offset = (char const *) memmem(buffer, dataSize, (char const *) &startIndicator, sizeof(startIndicator));
+    char const *const offset = (char const *) memmem(buffer, dataSize, (char const *) &startIndicator, sizeof(DATA_START_WORD));
     return !offset ? -1 : offset - buffer;
 }
 
 
+/*---- Function -------------------------------------------------------------
+  Does:
+    Read byte stream from client and deserialize it to Record structure.
+    Pass the Record to the Sink for processing.
+  
+  Wants:
+    Socket number.
+    Reference to client's Connection structure.
+    
+  Gives: 
+    1 on success, or
+    0 on connection close, or
+    -1 on read error.
+----------------------------------------------------------------------------*/
 int
 TcpSource::recvfromClient(int const socket, ClientConnection &conn)
 {
@@ -233,8 +308,19 @@ TcpSource::recvfromClient(int const socket, ClientConnection &conn)
             continue;
         }
 
-        rec.priv = socket;
-        processRecord_(rec, sendFunc);
+        
+        // Store the Record to Observer or to Sink
+        if (REC_ACT_OBSERVE == rec.action) {
+            if (observer_) {
+                observer_->attachLurker(rec, socket);
+            }
+        }
+        else {
+            rec.priv = socket;
+            if (processRecord_(rec, sendFunc) == 1  &&  observer_) {
+                observer_->relayRec(rec, sendFunc);
+            }
+        }
     }
 
 
@@ -246,6 +332,18 @@ TcpSource::recvfromClient(int const socket, ClientConnection &conn)
 }
 
 
+/*---- Function -------------------------------------------------------------
+  Does:
+    Serialize one Record to buffer and send it to client's socket. 
+  
+  Wants:
+    Record structure.
+    Private data containing handle (client socket's number) to the peer's
+    data.
+    
+  Gives: 
+    True on success.
+----------------------------------------------------------------------------*/
 int
 TcpSource::sendToClient(Record const &rec, uint64_t const priv) const
 {
@@ -258,15 +356,24 @@ TcpSource::sendToClient(Record const &rec, uint64_t const priv) const
     }
 
     Protocol p;
-    char buffer[1500];
+    char buffer[150];
+
+    // This is to suppress warning "dereferencing type-punned pointer will break strict-aliasing rules"
+    // when casting char[] to uint16_t*
+    struct StartWordInserter { StartWordInserter (void *const ptr) { *((uint16_t *) ptr) = htons(DATA_START_WORD); } };
+    StartWordInserter s(buffer);
     
-    int const bytes = p.serialize(buffer, sizeof(buffer), rec);
+    int const bytes = p.serialize(buffer + sizeof(DATA_START_WORD), sizeof(buffer) - sizeof(DATA_START_WORD), rec);
     if (bytes < 0) {
-        std::cerr << "Error in serialize" << std::endl;
+        std::cerr << "Error in serialize. Buffer overflow?" << std::endl;
         return -1;
     }
 
-    int const ret = send(socket, buffer, bytes, 0);
+// fprintf(stderr, "send %d:", bytes);
+// for (int i=0; i<bytes; ++i) fprintf(stderr, " %02X", (unsigned char) buffer[i]);
+// fprintf(stderr, "\n");
+
+    int const ret = send(socket, buffer, bytes + sizeof(DATA_START_WORD), 0);
     if (ret < 0) {
         std::cerr << "Error in send: " << strerror(errno) << std::endl;
         return -1;
@@ -274,6 +381,7 @@ TcpSource::sendToClient(Record const &rec, uint64_t const priv) const
 
     return 0;
 }
+
 
 #if 0
 //

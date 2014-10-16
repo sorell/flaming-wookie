@@ -6,6 +6,11 @@
 struct Record;
 
 
+/*---- Class ----------------------------------------------------------------
+  Does:
+    Implement Bintxt Sink functionality. Write to and read data from the file
+    (database).
+----------------------------------------------------------------------------*/
 class BintxtSinkImpl
 {
 public:
@@ -13,18 +18,23 @@ public:
     ~BintxtSinkImpl();
 
     bool open(char const *filename);
-    bool processRec(Record const &rec, Sink::SendRecord_f const &send);
+    int processRec(Record const &rec, Sink::SendRecord_f const &send);
 
 private:
     bool storeRec(Record const &rec) const;
     bool queryRec(Record const &ref, Sink::SendRecord_f const &send) const;
     int readRec(Record &rec, char const *buffer, int dataSize) const;
-    bool matchRec(Record const &rec, Record const &ref) const;
 
     FILE *file_;
 };
 
 
+/*---- Class ----------------------------------------------------------------
+  Does:
+    Intended to be used as singleton.
+    Is fired up on application start. Registers its name to SinkManager 
+    upon construction.
+----------------------------------------------------------------------------*/
 class BintxtSink : public Sink
 {
 public:
@@ -35,6 +45,11 @@ public:
     
     BintxtSinkImpl const *impl(void) const { return pImpl_; }
 
+
+    /*---- Function -------------------------------------------------------------
+      Does:
+        Creates binding to implementation's functions.
+    ----------------------------------------------------------------------------*/
     virtual ProcessRecord_f processRecFunc(void) const { return std::bind(&BintxtSinkImpl::processRec, pImpl_, std::placeholders::_1, std::placeholders::_2); }
 
 private:

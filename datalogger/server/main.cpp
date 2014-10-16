@@ -5,13 +5,22 @@
 #include "sinkManager.hpp"
 #include "bintxtSink.hpp"
 #include "tcpSource.hpp"
-#include "record.hpp"
-
+#include "observer.hpp"
 
 
 // This is for C-style signal handler
 static TcpSource *tpcPtr = NULL;
 
+/*---- Signal handler -------------------------------------------------------
+  Does:
+    Stop the server on interrupting signals
+  
+  Wants:
+    Signal number.
+    
+  Gives: 
+    Nothing.
+----------------------------------------------------------------------------*/
 void 
 signalHandler(int const sig)
 {
@@ -30,12 +39,22 @@ signalHandler(int const sig)
 }
 
 
+/*---- Function -------------------------------------------------------------
+  Does:
+    Print daemon usage to command line stderr.
+  
+  Wants:
+    Nothing.
+    
+  Gives: 
+    Nothing.
+----------------------------------------------------------------------------*/
 static void 
 printHelp(void)
 {
     std::string allSinks;
 
-    SINKMGR->forEachName( [&allSinks] (std::string const &name) { allSinks += "      "; allSinks += name; allSinks += '\n'; } );
+    SINKMGR.forEachName( [&allSinks] (std::string const &name) { allSinks += "      "; allSinks += name; allSinks += '\n'; } );
 
     std::cerr << "Usage: [-o SINK]" << std::endl;
     std::cerr << "  -o SINK      Select sink (database) to use. Built with sinks:" << std::endl;
@@ -43,6 +62,18 @@ printHelp(void)
 }
 
 
+/*---- Main Function --------------------------------------------------------
+  Does:
+    Parse command line arguments.
+    Open TCP server.
+    Select and start the sink (database) to use based on command line input.
+  
+  Wants:
+    Nothing.
+    
+  Gives: 
+    Nothing.
+----------------------------------------------------------------------------*/
 int 
 main(int argc, char **argv)
 {
@@ -54,12 +85,6 @@ main(int argc, char **argv)
     int tcpPort = defaultTcpPort;
     int c;
 
-
-    // if (argc) {
-    //     std::cerr << "You have to define at least one source" << std::endl;
-    //     printHelp();
-    //     return -1;
-    // }
 
     while (-1 != (c = getopt(argc, argv, opts))) {
         switch (c) {
@@ -82,10 +107,11 @@ main(int argc, char **argv)
     signal(SIGINT, signalHandler);
     signal(SIGKILL, signalHandler);
 
-    // Since TcpSource is local var and sinks are singleton, it ensures that
-    // the port will be closed before the sinks, preventing calls to a closed
-    // sink.
-    TcpSource tcp;
+    // Since TcpSource is local var and Sinks are singleton, it ensures that
+    // the port will be closed before the Sinks, preventing calls to a closed
+    // Sink.
+    Observer observer;
+    TcpSource tcp(&observer);
     tpcPtr = &tcp;
 
     if (!tcp.open(tcpPort)) {
@@ -93,7 +119,7 @@ main(int argc, char **argv)
     }
 
 
-    Sink *const sink = SINKMGR->sinkGet(sinkName);
+    Sink *const sink = SINKMGR.sinkGet(sinkName);
 
     if (!sink) {
         std::cerr << "Sink '" << sinkName << "' not recognised" << std::endl;
@@ -108,7 +134,7 @@ main(int argc, char **argv)
     }
 
     tcp.bindSink(sink);
-    tcp.blockingListen();
+    tcp.blockingListen();  // Daemonize here
 
     tpcPtr = NULL;
     return 0;

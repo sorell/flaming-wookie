@@ -6,12 +6,17 @@
 #include "record.hpp"
 
 
-//
-// Singleton bintxtSink. This registers the sink to sinkManager.
-//
+/*---- Singleton ------------------------------------------------------------
+  Does:
+    Register the sink to sinkManager on application startup.
+----------------------------------------------------------------------------*/
 static BintxtSink const *sinkSingleton = new BintxtSink;
 
 
+/*---- Destructor -----------------------------------------------------------
+  Does:
+    Called on application termination. Close the database.
+----------------------------------------------------------------------------*/
 BintxtSinkImpl::~BintxtSinkImpl()
 { 
     if (file_) {
@@ -22,6 +27,16 @@ BintxtSinkImpl::~BintxtSinkImpl()
 }
 
 
+/*---- Function -------------------------------------------------------------
+  Does:
+    Open the datebase file in binary mode for reading and writing.
+  
+  Wants:
+    File name.
+    
+  Gives: 
+    True on success
+----------------------------------------------------------------------------*/
 bool
 BintxtSinkImpl::open(char const *const filename)
 {
@@ -34,23 +49,52 @@ BintxtSinkImpl::open(char const *const filename)
 }
 
 
-bool
+/*---- Function -------------------------------------------------------------
+  Does:
+    Process record received from client based on its 'action'.
+  
+  Wants:
+    Record's data.
+    Handler to a function to use to send the reply.
+    
+  Gives: 
+    1 on successful store action, or
+    0 on other success, or
+    -1 on failure.
+----------------------------------------------------------------------------*/
+int
 BintxtSinkImpl::processRec(Record const &rec, Sink::SendRecord_f const &send)
 {
+    bool ret = false;
+
+
     switch (rec.action) {
     case REC_ACT_STORE:
-        storeRec(rec);
+        if (true == (ret = storeRec(rec))) {
+            return 1;
+        }
         break;
 
     case REC_ACT_GET_AFTER:
-        queryRec(rec, send);
+        ret = queryRec(rec, send);
         break;
     }
 
-    return true;
+    return ret ? 0 : 1;
 }
 
 
+/*---- Function -------------------------------------------------------------
+  Does:
+    Write one record to database file. Convert from internal structure to the
+    database format.
+  
+  Wants:
+    Record's data.
+    
+  Gives: 
+    True on success.
+----------------------------------------------------------------------------*/
 bool
 BintxtSinkImpl::storeRec(Record const &rec) const
 {
@@ -77,8 +121,21 @@ BintxtSinkImpl::storeRec(Record const &rec) const
 }
 
 
+/*---- Function -------------------------------------------------------------
+  Does:
+    Scan through the database from start and send every record matching the
+    given reference. Graciously handle the situations where a record from
+    database is cut at the end of the buffer's capacity.
+  
+  Wants:
+    Reference record data.
+    Handler to a function to use to send the replies.
+    
+  Gives: 
+    True on success.
+----------------------------------------------------------------------------*/
 bool
-BintxtSinkImpl::queryRec(Record const &ref, Sink::SendRecord_f const &send) const
+BintxtSinkImpl::queryRec(Record const &reference, Sink::SendRecord_f const &send) const
 {
     char buffer[1500];
     fseek(file_, 0, SEEK_SET);
@@ -99,7 +156,8 @@ BintxtSinkImpl::queryRec(Record const &ref, Sink::SendRecord_f const &send) cons
                 break;
             }
 
-            if (matchRec(rec, ref)  &&  send(rec, ref.priv) < 0) {
+            rec.action = REC_ACT_REPLY;
+            if (rec.match(reference)  &&  send(rec, reference.priv) < 0) {
                 return false;
             }
 
@@ -115,20 +173,19 @@ BintxtSinkImpl::queryRec(Record const &ref, Sink::SendRecord_f const &send) cons
 }
 
 
-bool
-BintxtSinkImpl::matchRec(Record const &rec, Record const &ref) const
-{
-    if (timercmp(&rec.timestamp, &ref.timestamp, > ))
-        return false;
-    if (ref.devType != "*"  &&  rec.devType != ref.devType)
-        return false;
-    if (ref.serial != "*"  &&  rec.serial != ref.serial)
-        return false;
-
-    return true;
-}
-
-
+/*---- Function -------------------------------------------------------------
+  Does:
+    Read one record in database format from buffer and store its data into 
+    Record structure.
+      
+  Wants:
+    Reference record data.
+    Handler to a function to use to send the replies.
+    
+  Gives: 
+    Number of bytes consumed from the buffer, or
+    0 in case the buffer's data was incomplete.
+----------------------------------------------------------------------------*/
 int
 BintxtSinkImpl::readRec(Record &rec, char const *const buffer, int const dataSize) const
 {
@@ -170,6 +227,16 @@ BintxtSinkImpl::readRec(Record &rec, char const *const buffer, int const dataSiz
 }
 
 
+/*---- Function -------------------------------------------------------------
+  Does:
+    Allocate implementation for Bintxt sink. Allow only one instance.
+      
+  Wants:
+    Nothing.
+
+  Gives: 
+    True on success.
+----------------------------------------------------------------------------*/
 bool
 BintxtSink::open(void)
 {
