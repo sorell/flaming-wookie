@@ -12,10 +12,10 @@ Features
 
 Howto
 -----
-devlogd -o SINK
+devlogd -o SINK  
 Select Sink to use for database. -h option shows compiled Sinks.
 
-devlogd -p PORT
+devlogd -p PORT  
 Select TCP port to listen to.
 
 
