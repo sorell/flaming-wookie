@@ -280,7 +280,7 @@ TcpSource::scanForStart(char const *const buffer, int const dataSize) const
 {
     // Would not need htons because DATA_START_WORD is symmetrical, but I like to have it here 
     // for future proofing.
-    static unsigned short const startIndicator = htons(DATA_START_WORD);
+    static uint16_t const startIndicator = htons(DATA_START_WORD);
     char const *const offset = (char const *) memmem(buffer, dataSize, (char const *) &startIndicator, sizeof(DATA_START_WORD));
     return !offset ? -1 : offset - buffer;
 }
@@ -311,7 +311,7 @@ TcpSource::recvFromClient(int const socket, ClientConnection &conn)
 
 
 // fprintf(stderr, "recv %d:", bytes);
-// for (int i=0; i<bytes; ++i) fprintf(stderr, " %02X", conn.rxBuffer[i]);
+// for (int i=0; i<bytes; ++i) fprintf(stderr, " %02X", (unsigned char) conn.rxBuffer[i]);
 // fprintf(stderr, "\n");
 
     if (bytes < 1) {
@@ -334,26 +334,27 @@ TcpSource::recvFromClient(int const socket, ClientConnection &conn)
             break;
         }
 
-        conn.rxPos += 2 + ret;  // 2 to pass the DATA_START_WORD
+        conn.rxPos += ret;  // Start is here
+        int const tlvStart = conn.rxPos + sizeof(DATA_START_WORD);  // Packet is here
 
         Record rec;
-        int const ret = p.deserialize(rec, conn.rxBuffer + conn.rxPos, bytes - conn.rxPos);
+        int const ret = p.deserialize(rec, conn.rxBuffer + tlvStart, bytes - tlvStart);
 
         if (ret < 0) {
-            // Skip the data after 'start marker' at rxPos
-            conn.rxPos += 2;
+            // Could not deserialize the packet. Find next start.
+            conn.rxPos = tlvStart;
             continue;
         }
         
         if (0 == ret) {
             // Data is incomplete. Wait for more.
+            // rxPos must be at 'start marker'.
             break;
         }
 
-        conn.rxPos += ret;
+        conn.rxPos = tlvStart + ret;
 
         if (!rec.validate()) {
-            std::cerr << "Record didn't pass validation" << std::endl;
             continue;
         }
 
@@ -370,13 +371,18 @@ TcpSource::recvFromClient(int const socket, ClientConnection &conn)
             if (processRecord_(rec, sendFunc) == 1  &&  observer_) {
                 observer_->relayRec(rec, sendFunc);
             }
+
+            if (REC_ACT_GET_AFTER == rec.action) {
+                sendEmptyRecord(socket);
+            }
         }
     }
 
 
     // Move the unhandled data to the start of the buffer
-    memmove(conn.rxBuffer, conn.rxBuffer + conn.rxPos, bytes - conn.rxPos);
-    conn.rxPos = 0;
+    int const moveBytes = bytes - conn.rxPos;
+    memmove(conn.rxBuffer, conn.rxBuffer + conn.rxPos, moveBytes);
+    conn.rxPos = moveBytes;
 
     return 1;
 }
@@ -430,6 +436,15 @@ TcpSource::sendToClient(Record const &rec, uint64_t const priv) const
     }
 
     return 0;
+}
+
+
+int
+TcpSource::sendEmptyRecord(int const socket) const
+{
+    static Record const emptyRec(REC_ACT_REPLY);
+
+    return sendToClient(emptyRec, socket);
 }
 
 

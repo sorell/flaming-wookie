@@ -35,37 +35,53 @@ def openConnection(server, port):
 
 
 def parseStoreStr(s):
-	storestr = s.split(',')
-	if len(storestr) != 3:
+	recStr = s.split(',')
+	if len(recStr) != 3:
 		print 'STORE must be of format SERIAL,DEVTYPE,DATA'
 		exit(1)
-	return storestr
+	for x in recStr[:2]:
+		if x == '*':
+			print 'SERIAL and DEVTYPE can\'t be wildcards'
+			exit(1)
+	return recStr
 
 
 def parseQueryStr(s):
-	querystr = s.split(',')
-	if len(querystr) != 3:
+	recStr = s.split(',')
+	if len(recStr) != 3:
 		print 'QUERY must be of format SERIAL,DEVTYPE,AGE'
 		print 'SERIAL and DEVTYPE may be \'*\' for wildcard'
 		print 'AGE may be 0 to denote \'since the dawn of time\'. Otherwise considered as record age in seconds'
 		exit(1)
 	try:
-		querystr[2] = int(querystr[2])
-		if (querystr[2] != 0):
-			querystr[2] = time.time() - querystr[2]
+		recStr[2] = int(recStr[2])
+		if (recStr[2] != 0):
+			recStr[2] = time.time() - recStr[2]
 	except:
 		print 'AGE must be an integer'
 		exit(1)
-	return querystr
+	return recStr
 
 
 def parseObserveStr(s):
-	observeStr = s.split(',')
-	if len(observeStr) != 2:
+	recStr = s.split(',')
+	if len(recStr) != 2:
 		print 'OBSERVE must be of format SERIAL,DEVTYPE'
 		print 'SERIAL and DEVTYPE may be \'*\' for wildcard'
 		exit(1)
-	return observeStr
+	return recStr
+
+
+def parseStressStr(s):
+	recStr = s.split(',')
+	if len(recStr) != 2:
+		print 'STRESS must be of format SERIAL,DEVTYPE'
+		exit(1)
+	for x in recStr:
+		if x == '*':
+			print 'SERIAL and DEVTYPE can\'t be wildcards'
+			exit(1)
+	return recStr
 
 
 def parseTlvHeader(s, packet):
@@ -112,7 +128,9 @@ def parseTlvHeader(s, packet):
 
 def parseQueryPackets(sock):
 	s = ''
-	while (True):
+	finished = False
+
+	while (not finished):
 		try:
 			s += sock.recv(1500)
 		except socket.error as msg:
@@ -127,28 +145,27 @@ def parseQueryPackets(sock):
 			if struct.unpack('! H', s[0:2])[0] != 0x5A5A:
 				print 'Start byte mismatch'; exit(1)
 			
+			packet = {}
+			tmp = s[2:]
+
 			try:
-				packet = {}
-				tmp = s[2:]
 				tmp = parseTlvHeader(tmp, packet)
 				tmp = parseTlvHeader(tmp, packet)
 				tmp = parseTlvHeader(tmp, packet)
 				tmp = parseTlvHeader(tmp, packet)
 				tmp = parseTlvHeader(tmp, packet)
 				s = tmp
-				print 'packet', packet
 			except:
+				finished = True
 				break
 
+			if len(packet['serial']) == 0  and  packet['time'] == 0.0:
+				# Empty reply: last packet
+				print 'Last record'
+				finished = True
+				break;
 
-
-
-
-
-
-def stressTest(sock):
-	exit(0)
-
+			print 'Query result:', packet
 
 
 def makeStorePacket(serial, devType, logData):
@@ -173,6 +190,29 @@ def makeObservePacket(serial, devType):
 	return data
 
 
+def stressTest(sock, serial, devType):
+	s = struct.Struct('! H HHH HH%is HH%is HHI' % (len(serial), len(devType)))
+	nextReport = time.time() + 1
+	num = 0
+	prevNum = 0
+	avg = 0
+
+	while True:
+		values = (0x5A5A, PRM_ACTION, 2, REC_ACT_STORE, PRM_SERNUM, len(serial), serial, PRM_DEVTYPE, len(devType), devType, PRM_DATA, 4, num)
+		data = s.pack(*values)
+		sock.send(data)
+		num = num + 1
+		
+		now = time.time()
+		if now > nextReport:
+			if 0 == avg:
+				avg = num - prevNum 
+			else: 
+				avg = avg * 5 / 6 + (num - prevNum) / 6
+
+			print num - prevNum, 'packets / s, moving avgerage', avg
+			prevNum = num
+			nextReport = now + 1
 
 
 if __name__ == "__main__":
@@ -182,7 +222,7 @@ if __name__ == "__main__":
 	argParser.add_argument('-s', '--store', type=str, help='Store data line')
 	argParser.add_argument('-q', '--query', type=str, help='Query data line')
 	argParser.add_argument('-O', '--observe', type=str, help='Observe for matching records')
-	argParser.add_argument('-T', '--stress', action="store_true", help='Stress test mode')
+	argParser.add_argument('-T', '--stress', type=str, help='Stress test mode')
 	args = argParser.parse_args()
 
 	if int(bool(args.store)) + int(bool(args.query)) + int(bool(args.observe)) + int(bool(args.stress)) != 1:
@@ -195,36 +235,37 @@ if __name__ == "__main__":
 	port = args.port if args.port != None else DEFAULT_PORT
 
 	if args.store:
-		storeStr = parseStoreStr(args.store)
+		recStr = parseStoreStr(args.store)
 
 	if args.query:
-		queryStr = parseQueryStr(args.query)
+		recStr = parseQueryStr(args.query)
 
 	if args.observe:
-		observeStr = parseObserveStr(args.observe)
+		recStr = parseObserveStr(args.observe)
+
+	if args.stress:
+		recStr = parseStressStr(args.stress)
 
 
 	sock = openConnection(server, port)
 
 	if args.stress:
-		stressTest(sock)
+		stressTest(sock, recStr[0], recStr[1])
+		# This never returns
 	
 	elif args.store:
-		packet = makeStorePacket(storeStr[0], storeStr[1], storeStr[2])
+		packet = makeStorePacket(recStr[0], recStr[1], recStr[2])
 		sock.send(packet)
 		
 	elif args.query:
-		packet = makeQueryPacket(queryStr[0], queryStr[1], queryStr[2])
+		packet = makeQueryPacket(recStr[0], recStr[1], recStr[2])
 		sock.send(packet)
 		parseQueryPackets(sock)
 
 	elif args.observe:
-		packet = makeObservePacket(observeStr[0], observeStr[1])
+		packet = makeObservePacket(recStr[0], recStr[1])
 		sock.send(packet)
 		parseQueryPackets(sock)
 
-
-
 	sock.close()
-
 	exit(0)

@@ -52,7 +52,7 @@ For more information, please refer to <http://unlicense.org>
 ----------------------------------------------------------------------------*/
 struct Record
 {
-    Record() : timestamp({0, 0}), action(REC_ACT_UNDEFINED), priv(0) {}
+    Record(uint16_t const act = REC_ACT_UNDEFINED) : timestamp({0, 0}), action(act), priv(0) {}
     
     Record(Record const &rhs) 
     : timestamp(rhs.timestamp), action(rhs.action), devType(rhs.devType), serial(rhs.serial), data(rhs.data), priv(0) {}
@@ -88,15 +88,25 @@ struct Record
             return true;
             
         case REC_ACT_STORE:
-            return devType.length() > 0  &&  serial.length() > 0  &&  data.length() > 0;
+            if (serial.length() > 0  &&  data.length() > 0) {
+                return true;
+            }
+            break;
 
         case REC_ACT_GET_AFTER:
         case REC_ACT_OBSERVE:
-            return devType.length() > 0  &&  serial.length() > 0;
+            if (serial.length() > 0) {
+                return true;
+            }
+            break;
 
         default:
             break;
         }
+
+        std::cerr << "Record " << action << "," << serial << "," 
+            << devType << "," << data << ",(" << timestamp.tv_sec << "," << timestamp.tv_usec << ")," 
+            << " didn't pass validation" << std::endl;
         return false;
     }
 
@@ -116,15 +126,12 @@ struct Record
     bool match(Record const &rhs) const 
     {
         if (timercmp(&timestamp, &rhs.timestamp, < )) {
-            fprintf(stderr, "%s, %d: %lu.%lu vs %lu.%lu failed\n", __FILE__, __LINE__, timestamp.tv_sec, timestamp.tv_usec, rhs.timestamp.tv_sec, rhs.timestamp.tv_usec);
             return false;
         }
         if (rhs.devType != "*"  &&  devType != rhs.devType) {
-            fprintf(stderr, "%s, %d: failed\n", __FILE__, __LINE__);
             return false;
         }
         if (rhs.serial != "*"  &&  serial != rhs.serial) {
-            fprintf(stderr, "%s, %d: failed\n", __FILE__, __LINE__);
             return false;
         }
 

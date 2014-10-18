@@ -23,9 +23,11 @@ Code related highlights
 -----------------------
 - There is no memory deallocation involved, if you want to forget that stl classes heavily use dynamic memory (de)allocation.
 
-- Compile time code generation based on templates. (protocol.hpp)
+- Compile time code generation based on templates (protocol.hpp).
 
 - Use of new c++0x stuff: Lambda functions (main.hpp) and move constructor (tcpSource.hpp).
+
+- Self-initializing singleton objects (bintxt.cpp).
 
 
 Future considerations

@@ -62,7 +62,7 @@ public:
 private:
 
     // Data start delimeter for TCP stream
-    #define DATA_START_WORD  ((unsigned short) 0x5A5A)
+    #define DATA_START_WORD  ((uint16_t) 0x5A5A)
     #define RX_BUFFER_SIZE   1500
 
     /*---- Struct ---------------------------------------------------------------
@@ -98,6 +98,7 @@ private:
     int scanForStart(char const *buffer, int dataSize) const;
     int recvFromClient(int socket, ClientConnection &conn);
     int sendToClient(Record const &, uint64_t const priv) const;
+    int sendEmptyRecord(int socket) const;
 
 
     int socket_;
