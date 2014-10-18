@@ -1,3 +1,30 @@
+/*---- Unlicense ------------------------------------------------------------
+This is free and unencumbered software released into the public domain.
+
+Anyone is free to copy, modify, publish, use, compile, sell, or
+distribute this software, either in source code form or as a compiled
+binary, for any purpose, commercial or non-commercial, and by any
+means.
+
+In jurisdictions that recognize copyright laws, the author or authors
+of this software dedicate any and all copyright interest in the
+software to the public domain. We make this dedication for the benefit
+of the public at large and to the detriment of our heirs and
+successors. We intend this dedication to be an overt act of
+relinquishment in perpetuity of all present and future rights to this
+software under copyright law.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+For more information, please refer to <http://unlicense.org>
+----------------------------------------------------------------------------*/
+
 #ifndef HOMEWORK_SERVER_RECORD_HPP
 #define HOMEWORK_SERVER_RECORD_HPP
 
@@ -27,6 +54,33 @@ struct Record
 {
     Record() : timestamp({0, 0}), action(REC_ACT_UNDEFINED), priv(0) {}
     
+    Record(Record const &rhs) 
+    : timestamp(rhs.timestamp), action(rhs.action), devType(rhs.devType), serial(rhs.serial), data(rhs.data), priv(0) {}
+    
+    Record(Record &&rhs) 
+    : timestamp(rhs.timestamp), action(rhs.action), devType(rhs.devType), serial(rhs.serial), data(rhs.data), priv(0) {}
+    
+    Record &operator = (Record const &rhs) {
+        timestamp = rhs.timestamp;
+        action = rhs.action;
+        devType = rhs.devType;
+        serial = rhs.serial;
+        data = rhs.data;
+        priv = 0;
+        return *this;
+    }
+
+
+    /*---- Function -------------------------------------------------------------
+      Does:
+        Check Record has a valid state.
+
+      Wants:
+        Nothing.
+        
+      Gives: 
+        True on success.
+    ----------------------------------------------------------------------------*/
     bool validate(void) const 
     {
         switch (action) {
