@@ -12,8 +12,9 @@ Features
 
 Howto
 -----
-devlogd -o SINK  
-Select Sink to use for database. -h option shows compiled Sinks.
+devlogd -o SINK[:OPTS]
+Select Sink to use for database. OPTS are passed to the Sink. Generally assigns file name or working directory.
+-h option shows compiled Sinks.
 
 devlogd -p PORT  
 Select TCP port to listen to.
