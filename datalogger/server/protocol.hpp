@@ -353,7 +353,7 @@ public:
             processed += ret;
         }
 
-        return 0;
+        return processed;
     }
 
 

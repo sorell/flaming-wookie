@@ -156,7 +156,7 @@ def parseQueryPackets(sock):
 				tmp = parseTlvHeader(tmp, packet)
 				s = tmp
 			except:
-				finished = True
+				# Not enough data: Wait for more
 				break
 
 			if len(packet['serial']) == 0  and  packet['time'] == 0.0:
