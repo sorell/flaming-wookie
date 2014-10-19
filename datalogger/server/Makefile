@@ -16,7 +16,7 @@ CFLAGS=-Wall -O2 -std=c++0x $(DEBUGFLAGS) $(INCLUDES)
 # -Wno-array-bounds
 
 LDFLAGS=$(LIBS)
-SOURCES=main.cpp bintxtSink.cpp sinkManager.cpp tcpSource.cpp observer.cpp
+SOURCES=main.cpp bintxtSink.cpp sinkManager.cpp tcpSource.cpp observer.cpp asciitxtSink.cpp
 OBJECTS=$(SOURCES:.cpp=.o)
 DEPS=$(SOURCES:.cpp=.d)
 EXECUTABLE=devlogd

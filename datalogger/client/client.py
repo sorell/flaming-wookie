@@ -203,16 +203,17 @@ def stressTest(sock, serial, devType):
 		sock.send(data)
 		num = num + 1
 		
-		now = time.time()
-		if now > nextReport:
-			if 0 == avg:
-				avg = num - prevNum 
-			else: 
-				avg = avg * 5 / 6 + (num - prevNum) / 6
+		if 0 == num % 1000:
+			now = time.time()
+			if now > nextReport:
+				if 0 == avg:
+					avg = num - prevNum 
+				else: 
+					avg = avg * 5 / 6 + (num - prevNum) / 6
 
-			print num - prevNum, 'packets / s, moving avgerage', avg
-			prevNum = num
-			nextReport = now + 1
+				print num - prevNum, 'packets / s, moving avgerage', avg
+				prevNum = num
+				nextReport = now + 1
 
 
 if __name__ == "__main__":
