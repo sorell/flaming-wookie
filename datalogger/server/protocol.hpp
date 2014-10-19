@@ -293,8 +293,7 @@ public:
             switch (type) {
             case PRM_ACTION:
                 if (rec.action != REC_ACT_UNDEFINED) {
-                    std::cerr << "Invalid data: Record action defined twice" << std::endl;
-                    return -1;
+                    return processed;  // Sama param again: Must be another record
                 }
                 
                 ret = actionParser_.deserialize(rec.action, buffer + processed, dataSize - processed);
@@ -309,32 +308,28 @@ public:
 
             case PRM_SERNUM:
                 if (rec.serial.length() > 0) {
-                    std::cerr << "Invalid data: Record serial defined twice" << std::endl;
-                    return -1;
+                    return processed;  // Sama param again: Must be another record
                 }
                 ret = sernumParser_.deserialize(rec.serial, buffer + processed, dataSize - processed);
                 break;
 
             case PRM_DEVTYPE:
                 if (rec.devType.length() > 0) {
-                    std::cerr << "Invalid data: Record dev type defined twice" << std::endl;
-                    return -1;
+                    return processed;  // Sama param again: Must be another record
                 }
                 ret = devtypeParser_.deserialize(rec.devType, buffer + processed, dataSize - processed);
                 break;
 
             case PRM_DATA:
                 if (rec.data.length() > 0) {
-                    std::cerr << "Invalid data: Record data defined twice" << std::endl;
-                    return -1;
+                    return processed;  // Sama param again: Must be another record
                 }
                 ret = dataFieldParser_.deserialize(rec.data, buffer + processed, dataSize - processed);
                 break;
 
             case PRM_TIME:
                 if (rec.timestamp.tv_sec != 0) {
-                    std::cerr << "Invalid data: Record time defined twice" << std::endl;
-                    return -1;
+                    return processed;  // Sama param again: Must be another record
                 }
                 ret = timeParser_.deserialize(rec.timestamp, buffer + processed, dataSize - processed);
                 break;
@@ -358,7 +353,7 @@ public:
             processed += ret;
         }
 
-        return processed;
+        return 0;
     }
 
 
